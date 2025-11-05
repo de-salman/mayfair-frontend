@@ -5,6 +5,7 @@ export const MODULES = {
   FLIGHT_MANAGEMENT: 'flightManagement',
   MARKETING: 'campaigns',
   CRM: 'clients',
+  ACCOUNTING: 'accounting',
   TASK_TRACKER: 'taskTracker',
   ANNOUNCEMENTS: 'announcements',
 };
@@ -16,6 +17,7 @@ export const MODULE_NAMES = {
   [MODULES.FLIGHT_MANAGEMENT]: 'Flight Management',
   [MODULES.MARKETING]: 'Marketing',
   [MODULES.CRM]: 'CRM',
+  [MODULES.ACCOUNTING]: 'Accounting',
   [MODULES.TASK_TRACKER]: 'Task Tracker',
   [MODULES.ANNOUNCEMENTS]: 'Announcements',
 };
@@ -27,6 +29,7 @@ export const MODULE_DESCRIPTIONS = {
   [MODULES.FLIGHT_MANAGEMENT]: 'Flight operations and scheduling',
   [MODULES.MARKETING]: 'Marketing campaigns and analytics',
   [MODULES.CRM]: 'Client relationship management',
+  [MODULES.ACCOUNTING]: 'Financial records and accounting',
   [MODULES.TASK_TRACKER]: 'Task tracking and management',
   [MODULES.ANNOUNCEMENTS]: 'System announcements',
 };

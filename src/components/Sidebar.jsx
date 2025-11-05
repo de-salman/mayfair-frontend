@@ -15,6 +15,7 @@ const Sidebar = ({ isOpen, onClose }) => {
     { path: '/flights', label: 'Flight Management', icon: '✈️', requiresModule: 'flightManagement' },
     { path: '/marketing', label: 'Marketing', icon: '📢', requiresModule: 'campaigns' },
     { path: '/crm', label: 'CRM', icon: '💼', requiresModule: 'clients' },
+    { path: '/accounting', label: 'Accounting', icon: '💰', requiresModule: 'accounting' },
     { path: '/tasks', label: 'Tasks', icon: '✅', requiresModule: null },
     { path: '/announcements', label: 'Announcements', icon: '📣', requiresModule: null },
   ];

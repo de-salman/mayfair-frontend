@@ -17,3 +17,4 @@ export const flightsAPI = {
   getSummary: (date) => api.get('/flights/summary', { params: { date } }),
 };
 
+

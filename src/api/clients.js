@@ -8,3 +8,4 @@ export const clientsAPI = {
   delete: (id) => api.delete(`/clients/${id}`),
 };
 
+

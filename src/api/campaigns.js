@@ -8,3 +8,4 @@ export const campaignsAPI = {
   delete: (id) => api.delete(`/campaigns/${id}`),
 };
 
+

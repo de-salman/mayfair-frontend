@@ -34,7 +34,22 @@ const FlightManagement = () => {
   const fetchFlights = async () => {
     try {
       const response = await flightsAPI.getAll();
-      setFlights(response.data.data || []);
+      const flightsData = response.data.data || [];
+      setFlights(flightsData);
+      
+      // Debug: Check round trips
+      const roundTrips = flightsData.filter(f => !!f.returnFlightId);
+      console.log('Total flights:', flightsData.length);
+      console.log('Round trips found:', roundTrips.length);
+      if (roundTrips.length > 0) {
+        console.log('Sample round trip:', {
+          flightNo: roundTrips[0].flightNo,
+          returnFlightId: roundTrips[0].returnFlightId,
+          returnFlightIdType: typeof roundTrips[0].returnFlightId,
+          hasReturnFlightIdId: !!roundTrips[0].returnFlightId?._id,
+          isReturnFlightIdObject: typeof roundTrips[0].returnFlightId === 'object'
+        });
+      }
     } catch (error) {
       console.error('Error fetching flights:', error);
     } finally {
@@ -302,6 +317,32 @@ const FlightManagement = () => {
 
       {/* Flights List */}
       <Card title="All Flights">
+        {(() => {
+          const displayedFlights = flights.filter((flight) => {
+            // Filter out return flights (they're shown as part of the outbound flight)
+            return !flights.some(f => {
+              const fReturnId = f.returnFlightId?._id || f.returnFlightId;
+              return fReturnId && fReturnId.toString() === flight._id.toString();
+            });
+          });
+          const roundTripCount = displayedFlights.filter(f => {
+            // Check if returnFlightId exists (can be ObjectId string or populated object)
+            return !!f.returnFlightId;
+          }).length;
+          const singleSectorCount = displayedFlights.length - roundTripCount;
+          
+          return (
+            <div className="mb-4 flex items-center gap-4 text-sm text-gray-600">
+              <span className="font-medium">Total: {displayedFlights.length} flights</span>
+              <span className="px-2 py-1 rounded-full bg-primary/10 text-primary">
+                {roundTripCount} Round Trips
+              </span>
+              <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-700">
+                {singleSectorCount} Single Sector
+              </span>
+            </div>
+          );
+        })()}
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -315,32 +356,99 @@ const FlightManagement = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {flights.map((flight) => (
-                <tr key={flight._id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{flight.flightNo}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{flight.origin} → {flight.destination}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatDate(flight.date)} {flight.time}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{flight.aircraft || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      flight.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
-                      flight.status === 'completed' ? 'bg-green-100 text-green-800' :
-                      flight.status === 'delayed' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {flight.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleDelete(flight._id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {flights.map((flight) => {
+                // Check if this is a round trip (has returnFlightId)
+                // returnFlightId can be an ObjectId string or populated object
+                // If populated, returnFlightId will be an object with properties
+                // If not populated, returnFlightId will be an ObjectId string
+                const hasReturnFlight = !!flight.returnFlightId;
+                const isRoundTrip = hasReturnFlight;
+                // If returnFlightId is populated, it will be an object with flight details
+                // Otherwise, it's just an ObjectId and we'd need to fetch it (but it should be populated)
+                const returnFlight = hasReturnFlight && typeof flight.returnFlightId === 'object' && flight.returnFlightId._id 
+                  ? flight.returnFlightId 
+                  : null;
+                
+                // Determine route display
+                let routeDisplay = `${flight.origin} → ${flight.destination}`;
+                if (isRoundTrip && returnFlight) {
+                  // Show round trip as "MXP-DXB-MXP"
+                  routeDisplay = `${flight.origin}-${flight.destination}-${returnFlight.destination}`;
+                }
+                
+                // Check if this is the return flight of a round trip (should be filtered out)
+                const isReturnFlight = flights.some(f => {
+                  const fReturnId = f.returnFlightId?._id || f.returnFlightId;
+                  return fReturnId && fReturnId.toString() === flight._id.toString();
+                });
+                
+                // Skip displaying return flights (they're shown as part of the outbound flight)
+                if (isReturnFlight) {
+                  return null;
+                }
+                
+                return (
+                  <tr key={flight._id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <div className="flex items-center gap-2">
+                        {flight.flightNo}
+                        {isRoundTrip && (
+                          <span className="px-2 py-0.5 text-xs font-semibold rounded-full bg-primary/20 text-primary border border-primary/30">
+                            Round Trip
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <div className="flex items-center gap-2">
+                        <span className={isRoundTrip ? 'font-semibold text-primary' : ''}>{routeDisplay}</span>
+                        {isRoundTrip && returnFlight && (
+                          <span className="text-xs text-gray-400">
+                            ({flight.flightNo} / {returnFlight.flightNo})
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {formatDate(flight.date)} {flight.time}
+                      {isRoundTrip && returnFlight && (
+                        <div className="text-xs text-gray-400 mt-1">
+                          Return: {formatDate(returnFlight.date)} {returnFlight.time}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{flight.aircraft || '-'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`px-2 py-1 text-xs rounded-full ${
+                        flight.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                        flight.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        flight.status === 'delayed' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {flight.status}
+                      </span>
+                      {isRoundTrip && returnFlight && (
+                        <span className={`ml-2 px-2 py-1 text-xs rounded-full ${
+                          returnFlight.status === 'scheduled' ? 'bg-blue-100 text-blue-800' :
+                          returnFlight.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          returnFlight.status === 'delayed' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {returnFlight.status} (Return)
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => handleDelete(flight._id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

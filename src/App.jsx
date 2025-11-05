@@ -15,6 +15,7 @@ import CRM from './pages/CRM';
 import Tasks from './pages/Tasks';
 import Announcements from './pages/Announcements';
 import AdminUsers from './pages/AdminUsers';
+import Accounting from './modules/accounting';
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -58,6 +59,7 @@ const Layout = ({ sidebarOpen, setSidebarOpen }) => {
             <Route path="/flights" element={<ProtectedRoute requiredModule="flightManagement"><FlightManagement /></ProtectedRoute>} />
             <Route path="/marketing" element={<ProtectedRoute requiredModule="campaigns"><Marketing /></ProtectedRoute>} />
             <Route path="/crm" element={<ProtectedRoute requiredModule="clients"><CRM /></ProtectedRoute>} />
+            <Route path="/accounting" element={<ProtectedRoute requiredModule="accounting"><Accounting /></ProtectedRoute>} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/announcements" element={<Announcements />} />
             <Route path="/admin/users" element={<ProtectedRoute requiredRole="superadmin"><AdminUsers /></ProtectedRoute>} />

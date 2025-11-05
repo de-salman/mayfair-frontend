@@ -52,3 +52,4 @@ const LoadingSkeleton = ({ type = 'table', rows = 5 }) => {
 
 export default LoadingSkeleton;
 
+
