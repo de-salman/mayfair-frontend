@@ -25,6 +25,11 @@ const FlightManagement = () => {
     time: '',
     aircraft: '',
     status: 'scheduled',
+    isRoundTrip: false,
+    returnFlightNo: '',
+    returnDate: '',
+    returnTime: '',
+    returnStatus: 'scheduled',
   });
 
   useEffect(() => {
@@ -39,15 +44,34 @@ const FlightManagement = () => {
       
       // Debug: Check round trips
       const roundTrips = flightsData.filter(f => !!f.returnFlightId);
-      console.log('Total flights:', flightsData.length);
-      console.log('Round trips found:', roundTrips.length);
+      console.log('Total flights fetched:', flightsData.length);
+      console.log('Flights with returnFlightId:', roundTrips.length);
+      
+      // Check for return flights (flights that are referenced by another flight's returnFlightId)
+      const returnFlights = flightsData.filter(flight => {
+        return flightsData.some(f => {
+          if (!f.returnFlightId || f._id.toString() === flight._id.toString()) {
+            return false;
+          }
+          const fReturnId = f.returnFlightId?._id || f.returnFlightId;
+          const flightId = flight._id?.toString() || flight._id;
+          return fReturnId && flightId && fReturnId.toString() === flightId.toString();
+        });
+      });
+      console.log('Return flights identified:', returnFlights.length);
+      
       if (roundTrips.length > 0) {
-        console.log('Sample round trip:', {
+        console.log('Sample round trip (outbound):', {
           flightNo: roundTrips[0].flightNo,
           returnFlightId: roundTrips[0].returnFlightId,
-          returnFlightIdType: typeof roundTrips[0].returnFlightId,
-          hasReturnFlightIdId: !!roundTrips[0].returnFlightId?._id,
-          isReturnFlightIdObject: typeof roundTrips[0].returnFlightId === 'object'
+          returnFlightIdType: typeof roundTrips[0].returnFlightId
+        });
+      }
+      
+      if (returnFlights.length > 0) {
+        console.log('Sample return flight:', {
+          flightNo: returnFlights[0].flightNo,
+          id: returnFlights[0]._id
         });
       }
     } catch (error) {
@@ -82,10 +106,89 @@ const FlightManagement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await flightsAPI.create(formData);
-      fetchFlights();
+      if (formData.isRoundTrip) {
+        // Create round trip: outbound flight first
+        const outboundFlight = {
+          flightNo: formData.flightNo,
+          origin: formData.origin,
+          destination: formData.destination,
+          date: formData.date,
+          time: formData.time,
+          aircraft: formData.aircraft,
+          status: formData.status,
+          isRoundTrip: true,
+        };
+        
+        const outboundResponse = await flightsAPI.create(outboundFlight);
+        const outboundFlightId = outboundResponse.data.data._id;
+        
+        // Create return flight
+        const returnFlight = {
+          flightNo: formData.returnFlightNo || `${formData.flightNo}R`,
+          origin: formData.destination, // Return flight origin is the outbound destination
+          destination: formData.origin, // Return flight destination is the outbound origin
+          date: formData.returnDate || formData.date, // Use return date or same as outbound
+          time: formData.returnTime || formData.time,
+          aircraft: formData.aircraft, // Same aircraft
+          status: formData.returnStatus || formData.status,
+          isRoundTrip: true,
+        };
+        
+        const returnResponse = await flightsAPI.create(returnFlight);
+        const returnFlightId = returnResponse.data.data._id;
+        
+        // Link outbound to return flight
+        const updateResponse = await flightsAPI.update(outboundFlightId, { returnFlightId: returnFlightId });
+        
+        // Verify the update was successful
+        const updatedOutbound = updateResponse.data.data;
+        console.log('Round trip created:', {
+          outboundFlightId,
+          outboundFlightNo: outboundResponse.data.data.flightNo,
+          returnFlightId,
+          returnFlightNo: returnResponse.data.data.flightNo,
+          updateResponse: updatedOutbound,
+          hasReturnFlightId: !!updatedOutbound.returnFlightId,
+          returnFlightIdValue: updatedOutbound.returnFlightId
+        });
+        
+        // Verify the link was successful
+        if (!updatedOutbound.returnFlightId) {
+          console.warn('Warning: returnFlightId was not set on outbound flight!');
+          showToast('Warning: Round trip link may not be complete. Please refresh the page.', 'warning');
+        }
+        
+        // Wait a moment for the database to update, then refresh
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+        showToast('Round trip created successfully!', 'success');
+      } else {
+        // Create single sector flight
+        const flightData = {
+          flightNo: formData.flightNo,
+          origin: formData.origin,
+          destination: formData.destination,
+          date: formData.date,
+          time: formData.time,
+          aircraft: formData.aircraft,
+          status: formData.status,
+          isRoundTrip: false,
+        };
+        
+        await flightsAPI.create(flightData);
+        showToast('Flight created successfully!', 'success');
+      }
+      
+      // Refresh flights list to show updated round trip
+      // Force a fresh fetch to ensure we get the updated returnFlightId
+      await fetchFlights();
+      
+      // Double-check: fetch again after a short delay to ensure database consistency
+      setTimeout(() => {
+        fetchFlights();
+      }, 500);
+      
       resetForm();
-      showToast('Flight created successfully!', 'success');
     } catch (error) {
       console.error('Error creating flight:', error);
       showToast(error.response?.data?.error || 'Error creating flight', 'error');
@@ -113,9 +216,63 @@ const FlightManagement = () => {
       time: '',
       aircraft: '',
       status: 'scheduled',
+      isRoundTrip: false,
+      returnFlightNo: '',
+      returnDate: '',
+      returnTime: '',
+      returnStatus: 'scheduled',
     });
     setShowForm(false);
   };
+
+  // Filter out return flights (they're shown as part of the outbound flight)
+  // A return flight is one where another flight has this flight's ID as their returnFlightId
+  const displayedFlights = flights.filter((flight) => {
+    // Check if this flight is a return flight by checking if any other flight
+    // has this flight's ID as their returnFlightId
+    const isReturnFlight = flights.some(f => {
+      // Skip if same flight or no returnFlightId
+      if (f._id.toString() === flight._id.toString() || !f.returnFlightId) {
+        return false;
+      }
+      
+      // returnFlightId can be an ObjectId string or populated object
+      const fReturnId = f.returnFlightId?._id || f.returnFlightId;
+      const flightId = flight._id?.toString() || flight._id;
+      
+      // Check if this flight's ID matches the returnFlightId
+      if (fReturnId && flightId) {
+        return fReturnId.toString() === flightId.toString();
+      }
+      
+      return false;
+    });
+    
+    // Only include flights that are NOT return flights
+    return !isReturnFlight;
+  });
+  
+  // Debug: Log filtering results
+  if (flights.length > 0) {
+    const returnFlights = flights.filter((flight) => {
+      return flights.some(f => {
+        if (f._id.toString() === flight._id.toString() || !f.returnFlightId) {
+          return false;
+        }
+        const fReturnId = f.returnFlightId?._id || f.returnFlightId;
+        const flightId = flight._id?.toString() || flight._id;
+        return fReturnId && flightId && fReturnId.toString() === flightId.toString();
+      });
+    });
+    
+    if (returnFlights.length > 0) {
+      console.log('Return flights found:', returnFlights.length, returnFlights.map(f => ({ 
+        flightNo: f.flightNo, 
+        id: f._id,
+        hasReturnFlightId: !!f.returnFlightId 
+      })));
+    }
+  }
 
   // Group flights by date for timeline
   const groupedFlights = flights.reduce((acc, flight) => {
@@ -282,12 +439,141 @@ const FlightManagement = () => {
                 <option value="in-progress">In Progress</option>
               </select>
             </div>
+
+            {/* Round Trip Option */}
+            <div className="border-t pt-4">
+              <div className="flex items-center mb-4">
+                <input
+                  type="checkbox"
+                  id="isRoundTrip"
+                  checked={formData.isRoundTrip}
+                  onChange={(e) => setFormData({ ...formData, isRoundTrip: e.target.checked })}
+                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                />
+                <label htmlFor="isRoundTrip" className="ml-2 block text-sm font-medium text-gray-700">
+                  Round Trip Flight
+                </label>
+              </div>
+
+              {formData.isRoundTrip && (
+                <div className="bg-primary/5 p-4 rounded-lg space-y-4 border border-primary/20">
+                  <p className="text-sm font-medium text-primary mb-3">Return Flight Details</p>
+                  
+                  {/* Return Route (Auto-filled, readonly) */}
+                  <div className="bg-blue-50 p-3 rounded border border-blue-200 mb-4">
+                    <p className="text-xs font-medium text-blue-800 mb-2">Return Route (Auto-reversed):</p>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Return Origin</label>
+                        <input
+                          type="text"
+                          value={formData.destination || ''}
+                          disabled
+                          readOnly
+                          className="w-full px-3 py-2 border border-blue-300 rounded-md bg-blue-100 text-blue-800 font-semibold cursor-not-allowed"
+                        />
+                        <p className="text-xs text-blue-600 mt-1">Auto: Outbound Destination</p>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-blue-700 mb-1">Return Destination</label>
+                        <input
+                          type="text"
+                          value={formData.origin || ''}
+                          disabled
+                          readOnly
+                          className="w-full px-3 py-2 border border-blue-300 rounded-md bg-blue-100 text-blue-800 font-semibold cursor-not-allowed"
+                        />
+                        <p className="text-xs text-blue-600 mt-1">Auto: Outbound Origin</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Return Flight No <span className="text-gray-500">(optional)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={formData.returnFlightNo}
+                        onChange={(e) => setFormData({ ...formData, returnFlightNo: e.target.value.toUpperCase() })}
+                        placeholder={`Auto: ${formData.flightNo}R`}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Leave empty to auto-generate as {formData.flightNo || 'FLIGHT'}R</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Return Aircraft</label>
+                      <input
+                        type="text"
+                        value={formData.aircraft}
+                        disabled
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Same as outbound flight</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Return Date</label>
+                      <input
+                        type="date"
+                        value={formData.returnDate}
+                        onChange={(e) => setFormData({ ...formData, returnDate: e.target.value })}
+                        min={formData.date || undefined}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Leave empty to use outbound date</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Return Time</label>
+                      <input
+                        type="time"
+                        value={formData.returnTime}
+                        onChange={(e) => setFormData({ ...formData, returnTime: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Leave empty to use outbound time</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Return Status</label>
+                    <select
+                      value={formData.returnStatus}
+                      onChange={(e) => setFormData({ ...formData, returnStatus: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    >
+                      <option value="scheduled">Scheduled</option>
+                      <option value="delayed">Delayed</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="completed">Completed</option>
+                      <option value="in-progress">In Progress</option>
+                    </select>
+                  </div>
+
+                  <div className="bg-green-50 p-3 rounded border border-green-200">
+                    <p className="text-sm text-green-800 font-medium">
+                      <strong>Round Trip Route:</strong> {formData.origin || 'Origin'} → {formData.destination || 'Destination'} → {formData.origin || 'Origin'}
+                    </p>
+                    <p className="text-xs text-green-700 mt-1">
+                      ✓ Outbound: {formData.origin || 'Origin'} → {formData.destination || 'Destination'}
+                    </p>
+                    <p className="text-xs text-green-700">
+                      ✓ Return: {formData.destination || 'Destination'} → {formData.origin || 'Origin'} (Auto-reversed)
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex space-x-2">
               <button
                 type="submit"
                 className="px-4 py-2 bg-primary text-white font-semibold rounded-md hover:bg-primary-dark transition-colors"
               >
-                Create Flight
+                {formData.isRoundTrip ? 'Create Round Trip' : 'Create Flight'}
               </button>
               <button
                 type="button"
@@ -318,13 +604,6 @@ const FlightManagement = () => {
       {/* Flights List */}
       <Card title="All Flights">
         {(() => {
-          const displayedFlights = flights.filter((flight) => {
-            // Filter out return flights (they're shown as part of the outbound flight)
-            return !flights.some(f => {
-              const fReturnId = f.returnFlightId?._id || f.returnFlightId;
-              return fReturnId && fReturnId.toString() === flight._id.toString();
-            });
-          });
           const roundTripCount = displayedFlights.filter(f => {
             // Check if returnFlightId exists (can be ObjectId string or populated object)
             return !!f.returnFlightId;
@@ -356,7 +635,7 @@ const FlightManagement = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {flights.map((flight) => {
+              {displayedFlights.map((flight) => {
                 // Check if this is a round trip (has returnFlightId)
                 // returnFlightId can be an ObjectId string or populated object
                 // If populated, returnFlightId will be an object with properties
@@ -377,7 +656,11 @@ const FlightManagement = () => {
                 }
                 
                 // Check if this is the return flight of a round trip (should be filtered out)
+                // This check is already done in displayedFlights, but keeping it here as a safety check
                 const isReturnFlight = flights.some(f => {
+                  if (!f.returnFlightId || f._id.toString() === flight._id.toString()) {
+                    return false;
+                  }
                   const fReturnId = f.returnFlightId?._id || f.returnFlightId;
                   return fReturnId && fReturnId.toString() === flight._id.toString();
                 });
