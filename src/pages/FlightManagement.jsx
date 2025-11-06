@@ -41,39 +41,6 @@ const FlightManagement = () => {
       const response = await flightsAPI.getAll();
       const flightsData = response.data.data || [];
       setFlights(flightsData);
-      
-      // Debug: Check round trips
-      const roundTrips = flightsData.filter(f => !!f.returnFlightId);
-      console.log('Total flights fetched:', flightsData.length);
-      console.log('Flights with returnFlightId:', roundTrips.length);
-      
-      // Check for return flights (flights that are referenced by another flight's returnFlightId)
-      const returnFlights = flightsData.filter(flight => {
-        return flightsData.some(f => {
-          if (!f.returnFlightId || f._id.toString() === flight._id.toString()) {
-            return false;
-          }
-          const fReturnId = f.returnFlightId?._id || f.returnFlightId;
-          const flightId = flight._id?.toString() || flight._id;
-          return fReturnId && flightId && fReturnId.toString() === flightId.toString();
-        });
-      });
-      console.log('Return flights identified:', returnFlights.length);
-      
-      if (roundTrips.length > 0) {
-        console.log('Sample round trip (outbound):', {
-          flightNo: roundTrips[0].flightNo,
-          returnFlightId: roundTrips[0].returnFlightId,
-          returnFlightIdType: typeof roundTrips[0].returnFlightId
-        });
-      }
-      
-      if (returnFlights.length > 0) {
-        console.log('Sample return flight:', {
-          flightNo: returnFlights[0].flightNo,
-          id: returnFlights[0]._id
-        });
-      }
     } catch (error) {
       console.error('Error fetching flights:', error);
     } finally {
@@ -138,28 +105,7 @@ const FlightManagement = () => {
         const returnFlightId = returnResponse.data.data._id;
         
         // Link outbound to return flight
-        const updateResponse = await flightsAPI.update(outboundFlightId, { returnFlightId: returnFlightId });
-        
-        // Verify the update was successful
-        const updatedOutbound = updateResponse.data.data;
-        console.log('Round trip created:', {
-          outboundFlightId,
-          outboundFlightNo: outboundResponse.data.data.flightNo,
-          returnFlightId,
-          returnFlightNo: returnResponse.data.data.flightNo,
-          updateResponse: updatedOutbound,
-          hasReturnFlightId: !!updatedOutbound.returnFlightId,
-          returnFlightIdValue: updatedOutbound.returnFlightId
-        });
-        
-        // Verify the link was successful
-        if (!updatedOutbound.returnFlightId) {
-          console.warn('Warning: returnFlightId was not set on outbound flight!');
-          showToast('Warning: Round trip link may not be complete. Please refresh the page.', 'warning');
-        }
-        
-        // Wait a moment for the database to update, then refresh
-        await new Promise(resolve => setTimeout(resolve, 200));
+        await flightsAPI.update(outboundFlightId, { returnFlightId: returnFlightId });
         
         showToast('Round trip created successfully!', 'success');
       } else {
@@ -179,15 +125,7 @@ const FlightManagement = () => {
         showToast('Flight created successfully!', 'success');
       }
       
-      // Refresh flights list to show updated round trip
-      // Force a fresh fetch to ensure we get the updated returnFlightId
-      await fetchFlights();
-      
-      // Double-check: fetch again after a short delay to ensure database consistency
-      setTimeout(() => {
-        fetchFlights();
-      }, 500);
-      
+      fetchFlights();
       resetForm();
     } catch (error) {
       console.error('Error creating flight:', error);
@@ -251,28 +189,6 @@ const FlightManagement = () => {
     // Only include flights that are NOT return flights
     return !isReturnFlight;
   });
-  
-  // Debug: Log filtering results
-  if (flights.length > 0) {
-    const returnFlights = flights.filter((flight) => {
-      return flights.some(f => {
-        if (f._id.toString() === flight._id.toString() || !f.returnFlightId) {
-          return false;
-        }
-        const fReturnId = f.returnFlightId?._id || f.returnFlightId;
-        const flightId = flight._id?.toString() || flight._id;
-        return fReturnId && flightId && fReturnId.toString() === flightId.toString();
-      });
-    });
-    
-    if (returnFlights.length > 0) {
-      console.log('Return flights found:', returnFlights.length, returnFlights.map(f => ({ 
-        flightNo: f.flightNo, 
-        id: f._id,
-        hasReturnFlightId: !!f.returnFlightId 
-      })));
-    }
-  }
 
   // Group flights by date for timeline
   const groupedFlights = flights.reduce((acc, flight) => {
